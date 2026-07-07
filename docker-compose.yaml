@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:15
+    container_name: capstone2_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: nyc_taxi
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      DATA_PATH: /app/data 
+    ports:
+      - "5438:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/app/db
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+
+python-app:
+    build: .                           
+    container_name: capstone2_python
+    depends_on:
+      - postgres-db                    
+    environment:
+      DB_HOST: postgres-db             
+      DB_PORT: 5432                    
+      DB_USER: admin
+      DB_PASSWORD: adminpassword
+      DB_NAME: nyc_taxi
+      DATA_PATH: /app/data            
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+
+volumes:
+  pgdata:
+  
