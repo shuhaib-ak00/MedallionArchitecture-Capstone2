@@ -26,7 +26,6 @@ class LoadAuditRepository:
 
 
 if __name__ == "__main__":
-    # Mengecek apakah Bash script mengirimkan argumen yang pas (Tabel, Status, Baris)
     if len(sys.argv) == 4:
         target_table = sys.argv[1]
         status = sys.argv[2]

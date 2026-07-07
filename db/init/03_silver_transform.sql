@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS silver.taxi_trips_cleaned (
     pickup_datetime TIMESTAMP NOT NULL,
     dropoff_datetime TIMESTAMP NOT NULL,
     
-    -- Relasi lokasi (Foreign Key)
+    -- Foreign Key
     pickup_location_id INT REFERENCES silver.taxi_zones(location_id),
     dropoff_location_id INT REFERENCES silver.taxi_zones(location_id),
     

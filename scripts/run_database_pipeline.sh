@@ -19,12 +19,19 @@ sleep 10
 log_message "Tahap 2: Membuat schema database (Bronze, Silver, Gold, Audit)..."
 docker exec -i capstone2_postgres psql -U admin -d nyc_taxi -f /app/db/init/01_schema.sql >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 2 Gagal!"; exit 1; }
 docker exec -i capstone2_postgres psql -U admin -d nyc_taxi -f /app/db/init/ddl_audit.sql >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 2 (Schema Audit) Gagal!"; exit 1; }
+# # TAHAP 3: EXTRACT & LOAD (BRONZE)
+# log_message "Tahap 3: Mengunduh data ke lokal (Extract)..."
+# python scripts/extract_data.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 3 Gagal!"; exit 1; }
+
+# log_message "Tahap 4: Memuat data ke Layer Bronze (Load)..."
+# python scripts/load_to_bronze.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 4 Gagal!"; exit 1; }
+
 # TAHAP 3: EXTRACT & LOAD (BRONZE)
 log_message "Tahap 3: Mengunduh data ke lokal (Extract)..."
-python scripts/extract_data.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 3 Gagal!"; exit 1; }
+docker exec capstone2_python python scripts/extract_data.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 3 Gagal!"; exit 1; }
 
 log_message "Tahap 4: Memuat data ke Layer Bronze (Load)..."
-python scripts/load_to_bronze.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 4 Gagal!"; exit 1; }
+docker exec capstone2_python python scripts/load_to_bronze.py >> "$LOG_FILE" 2>&1 || { log_message "ERROR: Tahap 4 Gagal!"; exit 1; }
 
 # TAHAP 5: TRANSFORMASI KE SILVER
 log_message "Tahap 5: Menjalankan transformasi dan pembersihan data ke Layer Silver..."
