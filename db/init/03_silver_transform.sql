@@ -46,6 +46,19 @@ CREATE TABLE IF NOT EXISTS silver.data_quality_issues (
 
 TRUNCATE TABLE silver.taxi_trips_cleaned RESTART IDENTITY CASCADE;
 
+-- Isi lookup zona dari bronze (TRUNCATE dulu agar idempotent dan FK valid)
+TRUNCATE TABLE silver.taxi_zones RESTART IDENTITY CASCADE;
+
+INSERT INTO silver.taxi_zones (location_id, borough, zone, service_zone)
+SELECT DISTINCT
+    "LocationID"::INT,
+    "Borough",
+    "Zone",
+    service_zone
+FROM bronze.raw_taxi_zones
+WHERE "LocationID" IS NOT NULL
+ON CONFLICT (location_id) DO NOTHING;
+
 -- Memasukkan data bersih ke silver.taxi_trips_cleaned
 INSERT INTO silver.taxi_trips_cleaned (
     vendor_id, pickup_datetime, dropoff_datetime, 
@@ -60,7 +73,7 @@ SELECT
     t.tpep_dropoff_datetime::TIMESTAMP,
     t."PULocationID"::INT,
     t."DOLocationID"::INT,
-    COALESCE(t.passenger_count, 1)::INT AS passenger_count,
+    t.passenger_count::INT AS passenger_count,
     t.trip_distance::FLOAT,
     t.fare_amount::FLOAT,
     t.tip_amount::FLOAT,
@@ -93,13 +106,25 @@ SELECT
     EXTRACT(EPOCH FROM (t.tpep_dropoff_datetime::TIMESTAMP - t.tpep_pickup_datetime::TIMESTAMP)) / 60.0 AS trip_duration_minutes
 
 FROM bronze.raw_taxi_trips t
-INNER JOIN bronze.raw_taxi_zones pu_zone ON t."PULocationID" = pu_zone."LocationID"
-INNER JOIN bronze.raw_taxi_zones do_zone ON t."DOLocationID" = do_zone."LocationID"
-WHERE t.fare_amount >= 0 
+LEFT JOIN bronze.raw_taxi_zones pu_zone ON t."PULocationID" = pu_zone."LocationID"
+LEFT JOIN bronze.raw_taxi_zones do_zone ON t."DOLocationID" = do_zone."LocationID"
+WHERE t.tpep_pickup_datetime IS NOT NULL
+  AND t.tpep_dropoff_datetime IS NOT NULL
+  AND t.tpep_dropoff_datetime >= t.tpep_pickup_datetime
+  AND t."PULocationID" IS NOT NULL
+  AND t."DOLocationID" IS NOT NULL
+  AND pu_zone."LocationID" IS NOT NULL
+  AND do_zone."LocationID" IS NOT NULL
+  AND t.fare_amount IS NOT NULL
+  AND t.trip_distance IS NOT NULL
+  AND t.passenger_count IS NOT NULL
+  AND t.total_amount IS NOT NULL
+  AND t.tip_amount IS NOT NULL
+  AND t.passenger_count > 0
+  AND t.fare_amount >= 0 
   AND t.trip_distance >= 0 
-  AND t.passenger_count >= 0
   AND t.total_amount >= 0   
-  AND t.tip_amount >= 0;   
+  AND t.tip_amount >= 0;
 
 
 
@@ -112,9 +137,15 @@ SELECT
     
 
     CASE 
+        WHEN t.tpep_pickup_datetime IS NULL OR t.tpep_dropoff_datetime IS NULL THEN 'Null Datetime'
+        WHEN t.tpep_dropoff_datetime < t.tpep_pickup_datetime THEN 'Invalid Datetime Order'
+        WHEN t."PULocationID" IS NULL OR t."DOLocationID" IS NULL THEN 'Null LocationID'
+        WHEN pu_zone."LocationID" IS NULL OR do_zone."LocationID" IS NULL THEN 'Orphan LocationID'
+        WHEN t.fare_amount IS NULL OR t.trip_distance IS NULL OR t.passenger_count IS NULL
+          OR t.total_amount IS NULL OR t.tip_amount IS NULL THEN 'Null Metric Value'
+        WHEN t.passenger_count <= 0 THEN 'Invalid Passenger Count'
         WHEN t.fare_amount < 0 THEN 'Negative Fare Amount'
         WHEN t.trip_distance < 0 THEN 'Negative Trip Distance'
-        WHEN t.passenger_count < 0 THEN 'Negative Passenger Count'
         WHEN t.total_amount < 0 THEN 'Negative Total Amount'
         WHEN t.tip_amount < 0 THEN 'Negative Tip Amount'
         ELSE 'Other Invalid Data'
@@ -122,8 +153,22 @@ SELECT
     
     ROW_TO_JSON(t)::TEXT AS invalid_record_data
 FROM bronze.raw_taxi_trips t
-WHERE t.fare_amount < 0 
+LEFT JOIN bronze.raw_taxi_zones pu_zone ON t."PULocationID" = pu_zone."LocationID"
+LEFT JOIN bronze.raw_taxi_zones do_zone ON t."DOLocationID" = do_zone."LocationID"
+WHERE t.tpep_pickup_datetime IS NULL
+   OR t.tpep_dropoff_datetime IS NULL
+   OR t.tpep_dropoff_datetime < t.tpep_pickup_datetime
+   OR t."PULocationID" IS NULL
+   OR t."DOLocationID" IS NULL
+   OR pu_zone."LocationID" IS NULL
+   OR do_zone."LocationID" IS NULL
+   OR t.fare_amount IS NULL
+   OR t.trip_distance IS NULL
+   OR t.passenger_count IS NULL
+   OR t.total_amount IS NULL
+   OR t.tip_amount IS NULL
+   OR t.passenger_count <= 0
+   OR t.fare_amount < 0 
    OR t.trip_distance < 0 
-   OR t.passenger_count < 0
    OR t.total_amount < 0 
    OR t.tip_amount < 0;

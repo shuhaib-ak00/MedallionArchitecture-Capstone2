@@ -85,6 +85,7 @@ SELECT
     AVG(trip_distance) AS average_distance,
     AVG(trip_duration_minutes) AS average_duration
 FROM silver.taxi_trips_cleaned
+WHERE pickup_date IS NOT NULL
 GROUP BY pickup_date;
 
 
@@ -92,4 +93,4 @@ GROUP BY pickup_date;
 DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
 
 CREATE VIEW gold.vw_daily_trip_summary AS
-SELECT * FROM gold.mart_daily_trip_summary;
+SELECT * FROM gold.mart_daily_trip_summary ORDER BY pickup_date;

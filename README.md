@@ -47,7 +47,7 @@ capstone_project_2/
 │       ├── 03_silver_transform.sql # transformasi bronze -> silver + data quality
 │       └── 04_gold_mart.sql        # view & tabel mart gold
 ├── db/queries/ (atau root)
-│   └── 01_bussines_question.sql    # kumpulan query business questions
+│   └── 01_business_question.sql    # kumpulan query business questions
 ├── scripts/
 │   ├── extract_data.py             # download raw data (parquet & csv) jika belum ada
 │   ├── load_to_bronze.py           # load parquet/csv ke tabel bronze via COPY
@@ -85,7 +85,7 @@ Extract (Capstone 1) → data/raw/*.parquet & *.csv
     → Python load_to_bronze.py → bronze.raw_taxi_trips, bronze.raw_taxi_zones
     → SQL 03_silver_transform.sql → silver.taxi_trips_cleaned, silver.taxi_zones, silver.data_quality_issues
     → SQL 04_gold_mart.sql → gold.vw_trip_enriched, gold.vw_zone_performance, gold.mart_daily_trip_summary
-    → SQL 01_bussines_question.sql → jawaban pertanyaan bisnis
+    → SQL 01_business_question.sql → jawaban pertanyaan bisnis
 ```
 
 Setiap tahap load/transform dicatat ke `audit.load_audit` melalui `scripts/audit.py`.
@@ -121,9 +121,11 @@ gold.vw_trip_enriched / gold.vw_zone_performance / gold.mart_daily_trip_summary
 
 ## ⚙️ Prasyarat
 
-- Docker & Docker Compose
-- Python 3.10+ (untuk menjalankan script di host, karena `run_database_pipeline.sh` memanggil `python scripts/...` secara langsung, bukan lewat container)
+- Docker Desktop (sudah termasuk Docker Compose v2 — perintah `docker compose`, tanpa strip). Pipeline otomatis mendeteksi `docker compose` dulu lalu fallback ke `docker-compose` v1 bila perlu.
+- Python 3.10+ (hanya untuk menjalankan script manual di host; pipeline otomatis `run_database_pipeline.sh` menjalankan Python **di dalam container `python-app`** via `docker exec`)
+- Git Bash (Windows) untuk menjalankan `bash scripts/run_database_pipeline.sh`
 - Koneksi internet (untuk download raw data dari CloudFront pada tahap extract)
+- Resource: data Januari 2026 ± 2.6 juta trip — siapkan RAM ≥ 4 GB, disk bebas ≥ 2 GB (`data/raw` + volume Postgres), dan waktu eksekusi pipeline penuh ± 10–15 menit (tergantung mesin)
 
 ---
 
@@ -144,9 +146,11 @@ pip install -r requirements.txt
 
 ### 3. Jalankan database PostgreSQL via Docker Compose
 ```bash
-docker-compose up -d
+docker compose up -d     # Docker Desktop baru; bila gagal coba: docker-compose up -d
 ```
 Ini akan menjalankan container `capstone2_postgres` dan mengekspos PostgreSQL di port **5438** (host) → 5432 (container), dengan database `nyc_taxi`, user `admin`, password `adminpassword`.
+
+> Kredensial default di atas hanya untuk keperluan lokal/capstone. Untuk mengganti, ubah `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` di `docker-compose.yaml` (service `postgres-db` dan `python-app` harus sama), lalu `docker compose down -v && docker compose up -d`. Jangan commit kredensial asli ke repo publik.
 
 ### 4. Buat schema database
 ```bash
@@ -179,9 +183,9 @@ docker exec -i capstone2_postgres psql -U admin -d nyc_taxi -f /app/db/init/04_g
 
 ### 9. Jalankan query business questions
 ```bash
-docker exec -i capstone2_postgres psql -U admin -d nyc_taxi -f /app/db/queries/01_bussines_question.sql
+docker exec -i capstone2_postgres psql -U admin -d nyc_taxi -f /app/db/queries/01_business_question.sql
 ```
-Atau buka file `01_bussines_question.sql` langsung menggunakan tool database favorit Anda (DBeaver, pgAdmin, dsb) dengan koneksi ke `localhost:5438`.
+Atau buka file `01_business_question.sql` langsung menggunakan tool database favorit Anda (DBeaver, pgAdmin, dsb) dengan koneksi ke `localhost:5438`.
 
 ---
 
@@ -194,10 +198,10 @@ bash scripts/run_database_pipeline.sh
 ```
 
 Script ini akan:
-1. Menyalakan Docker Compose (`docker-compose up -d`).
-2. Membuat schema (`01_schema.sql`, `ddl_audit.sql`).
+1. Menyalakan Docker Compose (`docker compose up -d`, fallback ke `docker-compose up -d` untuk instalasi lama) dan menunggu PostgreSQL siap via `pg_isready` (maks 60 detik, bukan `sleep` buta).
+2. Membuat schema dan DDL (`01_schema.sql`, `ddl_audit.sql`, `02_bronze_load.sql`).
 3. Menjalankan `extract_data.py` untuk download raw data.
-4. Menjalankan `load_to_bronze.py` untuk load ke bronze.
+4. Menjalankan `load_to_bronze.py` untuk load ke bronze (COPY per chunk 100rb baris + validasi kolom), lalu verifikasi fail-fast bahwa `bronze.raw_taxi_trips` dan `bronze.raw_taxi_zones` tidak kosong.
 5. Menjalankan `03_silver_transform.sql` lalu mencatat jumlah baris `silver.taxi_trips_cleaned` ke audit.
 6. Menjalankan `04_gold_mart.sql` lalu mencatat jumlah baris `gold.mart_daily_trip_summary` ke audit.
 7. Menyimpan seluruh log (timestamp + status tiap tahap) ke `logs/pipeline_run_<timestamp>.log`.
@@ -208,7 +212,7 @@ Pipeline akan **berhenti (exit 1)** jika salah satu tahap gagal, dan status kega
 
 ## 📊 Business Questions
 
-Query lengkap ada di `01_bussines_question.sql`, di antaranya:
+Query lengkap ada di `01_business_question.sql`, di antaranya:
 
 1. Jumlah total trip valid pada Januari 2026.
 2. Tanggal dengan jumlah trip tertinggi.
@@ -239,8 +243,9 @@ SELECT * FROM audit.load_audit ORDER BY execution_time DESC;
 
 ## ⚠️ Kendala Teknis & Asumsi
 
-- `run_database_pipeline.sh` dan `scripts/audit.py` menjalankan Python **di host**, bukan di dalam container `python-app`, sehingga koneksi ke database memakai `localhost:5438` (port yang di-mapping Docker Compose). Pastikan port 5438 tidak dipakai service lain di mesin Anda.
+- Seluruh Python pipeline (`extract_data.py`, `load_to_bronze.py`, `audit.py`) dijalankan **di dalam container `python-app`** via `docker exec`, sehingga koneksi DB memakai host `postgres-db:5432`. Script tetap bisa jalan di host (memakai `localhost:5438`, port mapping Docker Compose) karena membaca env `POSTGRES_*` dengan fallback `DB_*`. Pastikan port 5438 tidak dipakai service lain di mesin Anda.
 - Data raw (`data/raw/*.parquet`, `*.csv`) tidak di-commit ke GitHub karena ukurannya besar — gunakan `scripts/extract_data.py` untuk mengunduh ulang, atau tambahkan folder tersebut ke `.gitignore`.
-- Proses load ke bronze bersifat idempotent (`TRUNCATE` sebelum `COPY`), sehingga aman dijalankan berulang tanpa menghasilkan data duplikat.
+- Proses load ke bronze bersifat idempotent (`TRUNCATE` sebelum `COPY` per chunk 100rb baris), sehingga aman dijalankan berulang tanpa menghasilkan data duplikat.
 - Payment type di-mapping manual berdasarkan dokumentasi resmi TLC (1=Credit Card, 2=Cash, 3=No Charge, 4=Dispute, 5=Unknown, 6=Voided Trip).
-- Baris dengan nilai negatif pada `fare_amount`, `trip_distance`, `passenger_count`, `total_amount`, atau `tip_amount` dikeluarkan dari `silver.taxi_trips_cleaned` dan dicatat sebagai data quality issue.
+- Baris dengan nilai negatif/NULL, `passenger_count <= 0`, `dropoff < pickup`, atau LocationID orphan (tidak ada di zone lookup) dikeluarkan dari `silver.taxi_trips_cleaned` dan dicatat ke `silver.data_quality_issues` dengan `error_type` spesifik (`Negative ...`, `Null ...`, `Orphan LocationID`, `Invalid Datetime Order`, `Invalid Passenger Count`).
+- File log pipeline (`logs/*.log`) disengaja tidak di-commit (aturan `*.log` di `.gitignore`); riwayat eksekusi permanen tersimpan di tabel `audit.load_audit`.

@@ -1,3 +1,4 @@
+import os
 import psycopg2
 import sys
 from datetime import datetime
@@ -31,11 +32,14 @@ if __name__ == "__main__":
         status = sys.argv[2]
         rows_processed = int(sys.argv[3])
         
-        # Konfigurasi Koneksi DB
+        # Konfigurasi Koneksi DB (bisa di-override via env agar jalan di host maupun container)
         try:
             conn = psycopg2.connect(
-                host="localhost", port="5438", 
-                database="nyc_taxi", user="admin", password="adminpassword"
+                host=os.getenv('POSTGRES_HOST', os.getenv('DB_HOST', 'localhost')),
+                port=os.getenv('POSTGRES_PORT', os.getenv('DB_PORT', '5438')),
+                database=os.getenv('POSTGRES_DB', os.getenv('DB_NAME', 'nyc_taxi')),
+                user=os.getenv('POSTGRES_USER', os.getenv('DB_USER', 'admin')),
+                password=os.getenv('POSTGRES_PASSWORD', os.getenv('DB_PASSWORD', 'adminpassword')),
             )
             audit_repo = LoadAuditRepository(conn)
             audit_repo.log_audit(target_table, status, rows_processed)

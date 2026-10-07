@@ -2,7 +2,8 @@
 SELECT 
     SUM(total_trip) AS total_valid_trips
 FROM gold.vw_daily_trip_summary
-WHERE DATE_TRUNC('month', pickup_date) = '2026-01-01';
+WHERE pickup_date >= DATE '2026-01-01'
+  AND pickup_date < DATE '2026-02-01';
 
 --2. Tanggal apa yang memiliki jumlah trip tertinggi?
 SELECT 
@@ -85,7 +86,8 @@ SELECT
     pickup_date, 
     total_revenue, 
     SUM(total_revenue) OVER (ORDER BY pickup_date) AS running_total_revenue 
-FROM gold.vw_daily_trip_summary;
+FROM gold.vw_daily_trip_summary
+ORDER BY pickup_date;
 
 --10. Perbandingan revenue hari ini dengan hari sebelumnya menggunakan LAG.
 SELECT 
@@ -93,4 +95,5 @@ SELECT
     total_revenue AS revenue_hari_ini, 
     LAG(total_revenue) OVER (ORDER BY pickup_date) AS revenue_kemarin,
     total_revenue - LAG(total_revenue) OVER (ORDER BY pickup_date) AS selisih_revenue
-FROM gold.vw_daily_trip_summary;
+FROM gold.vw_daily_trip_summary
+ORDER BY pickup_date;

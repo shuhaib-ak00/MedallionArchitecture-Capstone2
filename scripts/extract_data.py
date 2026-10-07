@@ -2,7 +2,14 @@ import os
 import urllib.request
 
 class DataExtractor:
-    def __init__(self, raw_data_dir="data/raw"):
+    def __init__(self, raw_data_dir=None):
+        # Hormati DATA_PATH bila diberikan (compose: /app/data/raw atau /app/data).
+        if raw_data_dir is None:
+            raw_env = os.getenv('DATA_PATH', os.path.join('data', 'raw'))
+            if os.path.basename(os.path.normpath(raw_env)) == 'raw':
+                raw_data_dir = raw_env
+            else:
+                raw_data_dir = os.path.join(raw_env, 'raw')
         self.raw_data_dir = raw_data_dir
         self._prepare_directory()
 
